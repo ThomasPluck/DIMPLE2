@@ -1,0 +1,10 @@
+# Ignore all project build files
+
+*.tcl
+*.log
+*.jou
+*.rpt
+*.txt
+
+**/vivado_project
+**/.Xil
