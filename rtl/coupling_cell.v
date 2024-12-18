@@ -5,7 +5,7 @@ module async_countdown #(
 )(
     input wire din,
     input wire sin,
-    input reg [WIDTH-1:0] weight,
+    input wire [WIDTH-1:0] weight,  // Changed from input reg to input wire
     output reg dout
 );
         
@@ -31,16 +31,21 @@ module async_countdown #(
     assign ring_osc = inv_chain[RING_LENGTH-1];
 
     // Counter register
-    reg [WIDTH-1:0] counter = 0;
+    reg [WIDTH-1:0] counter;
 
     // Enable logic if a wavefront has arrived
     assign osc_enable = (din ^ sin) & (din ^ dout);
 
-    always @(posedge ring_osc) begin
+    // Initialize counter
+    initial begin
+        counter = 0;
+        dout = 0;
+    end
 
+    always @(posedge ring_osc) begin
         if (counter == 0) begin
             counter <= weight;
-        end else if (counter != 0) begin
+        end else begin
             counter <= counter - 1;
             if (counter == 1) begin // Will be zero next
                 dout <= din;
@@ -57,19 +62,25 @@ module clocked_countdown #(
 )(
     input wire din,
     input wire sin,
-    input reg [WIDTH-1:0] weight,
+    input wire [WIDTH-1:0] weight,  // Changed from input reg to input wire
     input wire clk,
     output reg dout
 );
 
-    reg [WIDTH-1:1] counter <= 0;
+    reg [WIDTH-1:0] counter;  // Changed from [WIDTH-1:1] to [WIDTH-1:0]
+
+    // Initialize registers
+    initial begin
+        counter = 0;
+        dout = 0;
+    end
 
     always @(posedge clk) begin
         if ((din ^ sin) & (din ^ dout)) begin
             counter <= weight;
         end else if (counter != 0) begin
             counter <= counter - 1;
-            if (counter == 0) begin
+            if (counter == 1) begin  // Will be zero next
                 dout <= din;
             end
         end

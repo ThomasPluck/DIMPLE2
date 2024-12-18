@@ -9,10 +9,32 @@ $env:Path += ";$VivadoPath"
 
 $ProjectName = "coupling_cell_impl"
 $ProjectDir = "./vivado_project"
-$Part = "xc7a35tcpg236-1"
+$Part = "xc7a35tcpg236-1" # Basys3 part number
 
 $TclCommands = @"
 create_project $ProjectName $ProjectDir -part $Part -force
+
+# Create the ILA IP core
+create_ip -name ila -vendor xilinx.com -library ip -version 6.2 -module_name ila_0
+set_property -dict [list \
+    CONFIG.ALL_PROBE_SAME_MU_CNT {2} \
+    CONFIG.ALL_PROBE_SAME_MU {true} \
+    CONFIG.C_ADV_TRIGGER {true} \
+    CONFIG.C_DATA_DEPTH {1024} \
+    CONFIG.C_ENABLE_ILA_AXI_MON {false} \
+    CONFIG.C_EN_STRG_QUAL {1} \
+    CONFIG.C_INPUT_PIPE_STAGES {0} \
+    CONFIG.C_MONITOR_TYPE {Native} \
+    CONFIG.C_NUM_OF_PROBES {6} \
+    CONFIG.C_PROBE0_WIDTH {1} \
+    CONFIG.C_PROBE1_WIDTH {1} \
+    CONFIG.C_PROBE2_WIDTH {12} \
+    CONFIG.C_PROBE3_WIDTH {1} \
+    CONFIG.C_PROBE4_WIDTH {1} \
+    CONFIG.C_PROBE5_WIDTH {1} \
+    CONFIG.C_TRIGIN_EN {false} \
+    CONFIG.C_TRIGOUT_EN {false}] [get_ips ila_0]
+generate_target all [get_ips ila_0]
 
 # Add design files
 add_files {
@@ -29,22 +51,27 @@ add_files -fileset constrs_1 {
 set_property top top [current_fileset]
 
 # Set synthesis settings for async design
+set_property STEPS.SYNTH_DESIGN.ARGS.FLATTEN_HIERARCHY none [get_runs synth_1]
+set_property STEPS.SYNTH_DESIGN.ARGS.RETIMING false [get_runs synth_1]
 set_property STEPS.SYNTH_DESIGN.ARGS.NO_LC true [get_runs synth_1]
 set_property STEPS.SYNTH_DESIGN.ARGS.KEEP_EQUIVALENT_REGISTERS true [get_runs synth_1]
 set_property STEPS.SYNTH_DESIGN.ARGS.FSM_EXTRACTION off [get_runs synth_1]
-
-# Set specific properties for the ring oscillator
-set_property ALLOW_COMBINATORIAL_LOOPS TRUE [get_nets {async_count/inv_chain*}]
-set_property SEVERITY Warning [get_drc_checks LUTLP-1]
-set_property SEVERITY Warning [get_drc_checks NSTD-1]
 
 # Run synthesis
 launch_runs synth_1 -jobs 4
 wait_on_run synth_1
 
+if { [get_property PROGRESS [get_runs synth_1]] != "100%" } {
+    error "Synthesis failed"
+}
+
 # Run implementation
 launch_runs impl_1 -jobs 4
 wait_on_run impl_1
+
+if { [get_property PROGRESS [get_runs impl_1]] != "100%" } {
+    error "Implementation failed"
+}
 
 # Generate bitstream
 launch_runs impl_1 -to_step write_bitstream -jobs 4
@@ -55,12 +82,8 @@ open_run impl_1
 report_timing_summary -file timing_summary.rpt
 report_utilization -file utilization.rpt
 report_clock_networks -file clock_networks.rpt
-report_high_fanout_nets -file fanout.rpt
 
-# Generate detailed reports for the async circuit
-report_timing -from [get_pins async_count/counter_reg[*]/C] -to [get_pins async_count/counter_reg[*]/D] -file async_timing.rpt
-report_timing -through [get_nets async_count/inv_chain*] -file ring_osc_timing.rpt
-
+close_design
 close_project
 "@
 

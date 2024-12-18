@@ -1,28 +1,45 @@
 module top (
-    input  wire        sys_clk,    // FPGA system clock
-    input  wire        rst_n,      // Active low reset
-    input  wire [3:0]  sw,         // Switches for input control
-    input  wire [3:0]  btn,        // Push buttons
-    output wire [3:0]  led         // LEDs for output display
+    input  wire       clk,        // 100MHz system clock
+    input  wire       btnC,       // Center button for reset
+    input  wire [3:0] sw,         // Switches for inputs
+    output wire [3:0] led         // LEDs for outputs
 );
 
-    // Internal signals
+    // Test pattern generator signals
+    reg [25:0] slow_counter = 0;  // Divides 100MHz clock for visible changes
+    reg test_din = 0;
+    reg test_sin = 0;
+
+    // Counter for test pattern generation
+    always @(posedge clk) begin
+        slow_counter <= slow_counter + 1;
+        if (slow_counter == 0) begin
+            // Change pattern every ~0.67 seconds (100MHz/2^26)
+            test_din <= ~test_din;
+            if (test_din == 1)
+                test_sin <= ~test_sin;
+        end
+    end
+
+    // Internal signals to monitor
     wire        din;
     wire        sin;
     wire [11:0] weight;
     wire        async_dout;
     wire        sync_dout;
+    wire        ring_osc;
+    wire [11:0] async_counter;
+    wire [11:0] sync_counter;
     
-    // Use switches/buttons for control
-    assign din = sw[0];           // Input data on switch 0
-    assign sin = sw[1];           // Selection input on switch 1
-    assign weight = {8'h00, sw};  // Use switches to set a small test weight
+    // Map controls - use either switches or test pattern based on btnC
+    assign din = btnC ? sw[0] : test_din;
+    assign sin = btnC ? sw[1] : test_sin;
+    assign weight = {8'h0A, sw};  // Keep weight constant for testing
     
-    // Instantiate async countdown
+    // Get internal signals from async countdown
     async_countdown #(
         .WIDTH(12),
-        .RING_LENGTH(5),
-        .GATE_DELAY(0.3)  // Note: This delay only affects simulation
+        .RING_LENGTH(5)
     ) async_count (
         .din(din),
         .sin(sin),
@@ -30,23 +47,32 @@ module top (
         .dout(async_dout)
     );
     
-    // Instantiate sync countdown
+    // Get internal signals from sync countdown
     clocked_countdown #(
-        .WIDTH(12),
-        .RING_LENGTH(5),
-        .GATE_DELAY(0.3)  // Note: This delay only affects simulation
+        .WIDTH(12)
     ) sync_count (
         .din(din),
         .sin(sin),
         .weight(weight),
-        .clk(sys_clk),
+        .clk(clk),
         .dout(sync_dout)
     );
     
-    // Output mapping
-    assign led[0] = din;          // Input data
-    assign led[1] = sin;          // Selection input
-    assign led[2] = async_dout;   // Async circuit output
-    assign led[3] = sync_dout;    // Sync circuit output
+    // Map outputs to LEDs
+    assign led[0] = din;
+    assign led[1] = sin;
+    assign led[2] = async_dout;
+    assign led[3] = sync_dout;
+
+    // Instantiate ILA core
+    ila_0 debug_logic (
+        .clk(clk),
+        .probe0(din),           // 1-bit
+        .probe1(sin),           // 1-bit
+        .probe2(weight),        // 12-bit
+        .probe3(async_dout),    // 1-bit
+        .probe4(sync_dout),     // 1-bit
+        .probe5(ring_osc)       // 1-bit to monitor oscillator
+    );
 
 endmodule
